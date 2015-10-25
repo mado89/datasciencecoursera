@@ -1,0 +1,121 @@
+---
+title: "Creating the Submission"
+author: "Martin Dobiasch"
+date: "05. Oktober 2015"
+output: html_document
+---
+
+This ''document'' is how I came up with my solution.
+
+The first step. Read data and explore it
+
+```{r,cache=TRUE, eval=FALSE}
+test<- read.csv("UCI HAR Dataset/test/X_test.txt")
+summary(test)
+```
+Shows only a bunch of columns but nothing easily comprehendable.
+However, taking a closer look reveals that the separator is not set to the correct value (space). 
+
+```{r,cache=TRUE, eval=FALSE}
+test<- read.csv("UCI HAR Dataset/test/X_test.txt",sep=" ")
+head(test)
+```
+Outputs a table with 4311 rows and 667 columns. Still not good. 
+Especially, since when reading ''features_info.txt'' and ''features.txt'' reveals that there should be 561 columns.
+Running: 
+```{r engine='bash', eval=FALSE}
+head -n 1 UCI\ HAR\ Dataset/test/X_test.txt | wc
+```
+underpins this aswell. 
+
+```{r, eval=FALSE}
+head(test,n=1)
+```
+shows there are a lot of `NA`s in the data which are not supposed to be there. 
+Well googling for this problem quickly reveals I am using ''the wrong function''
+
+```{r,cache=TRUE}
+test<- read.table("UCI HAR Dataset/test/X_test.txt")
+head(test,n=1)
+```
+
+Next step as I want to have super modular code is to read the column description into R:
+```{r, cache=TRUE}
+features= read.table("UCI HAR Dataset/features.txt",colClasses = c("numeric","character"))
+```
+
+Now its time to create a code that merges the data. Additionally, the columns are named using the `features` data:
+```{r,cache=TRUE,eval=FALSE}
+test<- read.table("UCI HAR Dataset/test/X_test.txt")
+train<- read.table("UCI HAR Dataset/train/X_train.txt")
+data<- rbind(test,train)
+colnames(data)<-features$V2
+```
+
+Executing
+```{r, eval=FALSE}
+# Remove the old data
+rm(test)
+rm(train)
+```     
+would result in an empty `data` variable as all connected data would have been removed!
+
+When now fiddeling around for selecting the data using ``select(data, matches("(mean|std)"))`` it turns out there is an error ``Error: found duplicated column name``. The cause for this error are of course the column names. Thus using a workaround for the colnames the select statement can be used. 
+http://stackoverflow.com/questions/28549045/dplyr-select-error-found-duplicated-column-name
+
+```{r,cache=TRUE,eval=FALSE}
+# Workaround
+valid_column_names <- make.names(names=features$V2, unique=TRUE, allow_ = TRUE)
+
+#Read the data
+test<- read.table("UCI HAR Dataset/test/X_test.txt")
+train<- read.table("UCI HAR Dataset/train/X_train.txt")
+
+#Combine the data
+data<- rbind(test,train)
+colnames(data)<- valid_column_names
+
+#Select the data
+data_selected<-select(data, matches("(\\.mean\\.|\\.std\\.)"))
+```
+
+The above gives a first shot. However it is missing the subject and activity classification needed for step 5.
+
+```{r,cache=TRUE}
+require(dplyr)
+
+# Workaround
+valid_column_names <- make.names(names=features$V2, unique=TRUE, allow_ = TRUE)
+
+#Read the data
+sub<- read.table("UCI HAR Dataset/test/subject_test.txt")
+class<- read.table("UCI HAR Dataset/test/y_test.txt")
+test<- read.table("UCI HAR Dataset/test/X_test.txt")
+test<- cbind(sub,class,test)
+
+train<- read.table("UCI HAR Dataset/train/X_train.txt")
+sub<- read.table("UCI HAR Dataset/train/subject_train.txt")
+class<- read.table("UCI HAR Dataset/train/y_train.txt")
+train<- cbind(sub,class,train)
+
+#Combine the data
+data<- rbind(test,train)
+colnames(data)<- c("subject", "activity", valid_column_names)
+
+#Select the data
+data_selected<-select(data, matches("(subject|activity|\\.mean\\.|\\.std\\.)"))
+```
+
+Next is step 5. It should be possible to summarise the data using the `summary` function. No thats not the function it is prob. `summarise`. 
+As it turns out this is the right function. 
+However, there is still something needed: As there are a lot of columns it would be tedious to write a summary-statement for each of them.
+The solution to this is to use the `summarise_each` function.
+
+```{r, cache=TRUE}
+result<- data_selected %>% group_by(subject,activity) %>% summarise_each(funs(mean))
+
+head(result)
+```
+
+Et voila. Now the only thing which is missing is to create the final submission and create neater variable names. 
+
